@@ -9,6 +9,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -19,8 +20,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -94,13 +95,45 @@ internal class Round(val level: Level) {
         val delta = if (previousTime < 0f) 0f else (time - previousTime).coerceIn(0f, .045f)
         previousTime = time
         for (cell in rotations.indices) {
-            displayed[cell] += (target[cell] - displayed[cell]) * min(1f, delta * 23f)
+            val difference = target[cell] - displayed[cell]
+            displayed[cell] = if (kotlin.math.abs(difference) < .04f) target[cell]
+                else displayed[cell] + difference * (1f - kotlin.math.exp(-delta * 22f))
             val growing = time >= wetAt[cell]
             val change = if (growing) delta * 1.65f else -delta * 2.6f
             bloom[cell] = (bloom[cell] + change).coerceIn(0f, 1f)
         }
     }
 }
+
+private data class PipeArt(val dry: ImageBitmap, val filled: ImageBitmap)
+
+private class BoardArt(art: Artwork, chapter: Int) {
+    private fun pipe(art: Artwork, name: String) = PipeArt(art.sprite("${name}_dry"), art.sprite("${name}_wet"))
+    private val pipes = mapOf(
+        Piece.STRAIGHT to pipe(art, "straight"),
+        Piece.ELBOW to pipe(art, "elbow"),
+        Piece.TEE to pipe(art, "tee"),
+        Piece.CROSS to pipe(art, "cross"),
+        Piece.VALVE to pipe(art, "valve_open")
+    )
+    private val closed = pipe(art, "valve_closed")
+    val tank = art.sprite("tank")
+    val stone = art.sprite("stone")
+    val lock = art.sprite("lock")
+    val wilt = art.sprite("wilt")
+    val seedling = art.sprite("seedling")
+    val flower = art.sprite("plant_$chapter")
+
+    fun pipe(piece: Piece, shut: Boolean, wet: Boolean): ImageBitmap {
+        val sprite = if (shut) closed else pipes.getValue(piece)
+        return if (wet) sprite.filled else sprite.dry
+    }
+}
+
+private val bedColors = listOf(
+    Color(0xE9103530), Color(0xED172D3E), Color(0xEA423220),
+    Color(0xED19364A), Color(0xED123B3B)
+)
 
 @Composable internal fun GameBoard(
     round: Round,
@@ -111,6 +144,9 @@ internal class Round(val level: Level) {
     onRotate: (Int) -> Unit
 ) {
     val level = round.level
+    val sprites = remember(art, level.chapter) { BoardArt(art, level.chapter) }
+    val turns = remember(level) { FloatArray(level.tiles.size) { baseDegrees(level.tiles[it]) } }
+    val rotateCurrent by rememberUpdatedState(onRotate)
     var cell by remember(round) { mutableIntStateOf(level.tiles.indexOfFirst { !it.fixed }) }
     var focus by remember { mutableStateOf(false) }
     val requester = remember { FocusRequester() }
@@ -128,7 +164,7 @@ internal class Round(val level: Level) {
                 Key.DirectionDown -> if (row < level.height - 1) cell += level.width
                 Key.DirectionLeft -> if (column > 0) cell--
                 Key.DirectionRight -> if (column < level.width - 1) cell++
-                Key.Enter, Key.NumPadEnter, Key.Spacebar -> onRotate(cell)
+                Key.Enter, Key.NumPadEnter, Key.Spacebar -> rotateCurrent(cell)
                 else -> return@onPreviewKeyEvent false
             }
             true
@@ -143,7 +179,7 @@ internal class Round(val level: Level) {
                 val row = floor((tap.y - (size.height - tile * level.height) / 2) / tile).toInt()
                 if (column in 0 until level.width && row in 0 until level.height) {
                     cell = row * level.width + column
-                    onRotate(cell)
+                    rotateCurrent(cell)
                 }
             }
         }
@@ -153,46 +189,47 @@ internal class Round(val level: Level) {
         val edge = min(size.width / level.width, size.height / level.height)
         val origin = Offset((size.width - edge * level.width) / 2, (size.height - edge * level.height) / 2)
         val boardSize = Size(edge * level.width, edge * level.height)
-        drawRoundRect(Color(0xBC052C31), origin, boardSize, CornerRadius(edge * .22f))
-        drawRoundRect(Color(0xCBDBAE58), origin, boardSize, CornerRadius(edge * .22f), style = Stroke(edge * .036f))
+        val rim = CornerRadius(edge * .20f)
+        drawRoundRect(Color(0x9E041020), origin + Offset(0f, edge * .047f), boardSize, rim)
+        drawRoundRect(bedColors[level.chapter], origin, boardSize, rim)
+        drawRoundRect(Color(0xFFD2A65C), origin + Offset(edge * .018f, edge * .018f),
+            Size(boardSize.width - edge * .036f, boardSize.height - edge * .036f), rim, style = Stroke(edge * .027f))
         for (index in level.tiles.indices) {
             val corner = origin + Offset(index % level.width * edge, index / level.width * edge)
             val center = corner + Offset(edge / 2, edge / 2)
             val geometry = Size(edge, edge)
             val tile = level.tiles[index]
             if (tile.piece != Piece.BLOCK) {
-                drawRoundRect(Color(0x503E726C), corner + Offset(edge * .035f, edge * .035f),
-                    Size(edge * .93f, edge * .93f), CornerRadius(edge * .13f))
+                val face = Size(edge * .91f, edge * .91f)
+                val rounding = CornerRadius(edge * .13f)
+                drawRoundRect(Color(0x662B5150), corner + Offset(edge * .045f, edge * .044f), face, rounding)
+                drawRoundRect(Color(0x344CE0B7), corner + Offset(edge * .045f, edge * .044f), face,
+                    rounding, style = Stroke(edge * .012f))
             }
             val wet = time >= round.wetAt[index]
             val mask = round.water.masks[index]
             when (tile.piece) {
-                Piece.BLOCK -> sprite(art.sprite("stone"), center, geometry * .72f, .64f)
+                Piece.BLOCK -> sprite(sprites.stone, center, geometry * .74f, .76f)
                 Piece.PLANT, Piece.SOURCE -> {
                     port(mask, center, edge, wet)
                     if (tile.piece == Piece.SOURCE) {
-                        sprite(art.sprite("tank"), center, geometry * .80f)
+                        sprite(sprites.tank, center, geometry * .79f)
                         drawCircle(Color(0xAEE0FFFF), edge * .026f,
                             center + Offset(edge * .069f, edge * (.18f - ((time * .44f) % .22f))))
-                    } else plant(art, level.chapter, center, edge, round.bloom[index], time)
+                    } else plant(sprites, center, edge, round.bloom[index], time)
                 }
                 else -> {
-                    val shape = when (tile.piece) {
-                        Piece.ELBOW -> "elbow"
-                        Piece.STRAIGHT -> "straight"
-                        Piece.TEE -> "tee"
-                        Piece.CROSS -> "cross"
-                        else -> if (round.rotations[index] % 2 == 0) "valve_open" else "valve_closed"
-                    }
-                    val degrees = baseDegrees(tile) + round.displayed[index]
-                    rotate(degrees, center) {
-                        val image = art.sprite(shape + if (wet) "_wet" else "_dry")
-                        sprite(image, center, geometry)
-                    }
+                    val closed = tile.piece == Piece.VALVE && round.rotations[index] % 2 != 0
+                    val degrees = turns[index] + round.displayed[index]
+                    val image = sprites.pipe(tile.piece, closed, wet)
+                    rotate(degrees, center) { sprite(image, center, geometry) }
                     if (tile.fixed) {
-                        sprite(art.sprite("lock"), corner + Offset(edge * .82f, edge * .18f), geometry * .23f)
+                        sprite(sprites.lock, corner + Offset(edge * .82f, edge * .18f), geometry * .23f)
                     }
-                    if (wet) bubbles(mask, center, edge, time, index)
+                    val tilt = round.displayed[index] % 90f
+                    if (wet && (tilt < 1.1f || tilt > 88.9f)) {
+                        bubbles(mask, center, edge, time, index)
+                    }
                 }
             }
             if (wet && round.water.leaks[index] != 0) leaks(round.water.leaks[index], center, edge, time)
@@ -269,18 +306,17 @@ private fun DrawScope.leaks(mask: Int, center: Offset, edge: Float, time: Float)
     }
 }
 
-private fun DrawScope.plant(art: Artwork, chapter: Int, center: Offset, edge: Float, growth: Float, time: Float) {
+private fun DrawScope.plant(art: BoardArt, center: Offset, edge: Float, growth: Float, time: Float) {
     val dimensions = Size(edge * .84f, edge * .84f)
-    sprite(art.sprite("wilt"), center, dimensions, 1f - min(1f, growth * 2f))
+    sprite(art.wilt, center, dimensions, 1f - min(1f, growth * 2f))
     val tall = .60f + growth * .44f
-    sprite(art.sprite("seedling"), center + Offset(0f, dimensions.height * (1f-tall) / 2),
+    sprite(art.seedling, center + Offset(0f, dimensions.height * (1f-tall) / 2),
         Size(dimensions.width * tall, dimensions.height * tall), sin(PI.toFloat() * growth).coerceAtLeast(0f))
     val grown = ((growth - .33f) / .67f).coerceIn(0f, 1f)
-    sprite(art.sprite("plant_$chapter"), center + Offset(0f, dimensions.height * (1f-tall) / 2),
+    sprite(art.flower, center + Offset(0f, dimensions.height * (1f-tall) / 2),
         Size(dimensions.width * tall, dimensions.height * tall), grown)
     if (growth in .11f.. .98f) {
-        val halo = edge * .46f
-        drawCircle(Brush.radialGradient(listOf(Color(0x3EFFFBA1), Color.Transparent), center, halo), halo, center)
+        drawCircle(Color(0x17FFFBA1), edge * .39f, center)
         for (i in 0..4) {
             val angle = i * 1.26f + time * .8f
             val spark = center + Offset(sin(angle), sin(angle + 1.57f)) * (edge * (.22f + growth * .22f))

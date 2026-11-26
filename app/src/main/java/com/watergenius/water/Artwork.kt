@@ -21,8 +21,8 @@ internal class Artwork(private val context: Context) {
     private val loaded = mutableMapOf<String, ImageBitmap>()
     private val environments = listOf("garden", "forest", "desert", "frozen", "tropical")
     private val common = listOf(
-        "button_green", "button_blue", "panel", "star", "seedling", "wilt", "tank", "stone",
-        "butterfly", "lock", "logo"
+        "button_green", "button_blue", "panel_green", "star", "seedling", "wilt", "tank", "stone",
+        "butterfly", "lock", "logo", "flowers_foreground"
     )
 
     fun loadCommon() {
@@ -60,13 +60,16 @@ internal class Artwork(private val context: Context) {
 
 internal fun DrawScope.sprite(image: ImageBitmap, center: Offset, dimensions: Size, opacity: Float = 1f) {
     if (dimensions.minDimension < 1 || opacity <= 0) return
+    val scale = minOf(dimensions.width / image.width, dimensions.height / image.height)
+    val width = image.width * scale
+    val height = image.height * scale
     drawImage(
         image = image,
         dstOffset = IntOffset(
-            (center.x - dimensions.width / 2).roundToInt(),
-            (center.y - dimensions.height / 2).roundToInt()
+            (center.x - width / 2).roundToInt(),
+            (center.y - height / 2).roundToInt()
         ),
-        dstSize = IntSize(dimensions.width.roundToInt(), dimensions.height.roundToInt()),
+        dstSize = IntSize(width.roundToInt().coerceAtLeast(1), height.roundToInt().coerceAtLeast(1)),
         alpha = opacity.coerceAtMost(1f)
     )
 }

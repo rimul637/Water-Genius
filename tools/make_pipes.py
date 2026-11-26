@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw, ImageFilter
 DEST = Path(__file__).resolve().parents[1] / "app/src/main/assets"
 S = 320
 y, x = np.mgrid[0:S, 0:S] / S
-radius = .170
+radius = .180
 rng = np.random.default_rng(963)
 texture = rng.normal(0, 1.5, (S, S))
 
@@ -23,19 +23,23 @@ def render(name, ends, cord, variant):
     bevel = (distance < radius)
     inner = distance < .104
     t = np.clip(signed / radius, -1, 1)
-    light = .35 + .60*np.sqrt(1-t*t) + .47*np.exp(-((t+.35)/.14)**2)
-    rgb = np.array([133,151,163]) * light[:,:,None]
+    body = .28 + .63*np.sqrt(1-t*t)
+    specular = .62*np.exp(-((t+.66)/.12)**2) + .32*np.exp(-((t-.73)/.095)**2)
+    rgb = np.array([145,172,184]) * (body + specular)[:,:,None]
     stripe = .76 + .20*np.exp(-((t+.02)/.47)**2) + .53*np.exp(-((t+.39)/.095)**2)
     channel = np.array([18,55,73] if variant == "dry" else [6,168,235])
     rgb[inner] = (stripe[:,:,None]*channel)[inner]
     ridge = (distance > .106) & (distance < .114)
-    rgb[ridge] *= 1.36
+    rgb[ridge] *= 1.50
+    edge = (distance > .169) & (distance < .175)
+    rgb[edge] *= .69
     for end in ends:
         axis, offset = [(y,x-.5),(1-x,y-.5),(1-y,x-.5),(x,y-.5)][end]
         fit = (axis > .04) & (axis < .19) & (abs(offset) < .193)
         cylinder = np.sqrt(np.clip(1-(offset/.195)**2,0,1))
         shine = .38 + .57*cylinder + .45*np.exp(-((offset+.071)/.044)**2)
-        lip = np.where((axis < .060)|(axis > .170),1.32,1.0)
+        lip = np.where((axis < .060)|(axis > .170),1.42,1.0)
+        lip *= np.where((axis > .069) & (axis < .079), .77, 1.0)
         side = np.where(axis > .181,.63,1.0)
         rgb[fit] = ((shine*lip*side)[:,:,None]*[214,141,40])[fit]
         bevel |= fit
